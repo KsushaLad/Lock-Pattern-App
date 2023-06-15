@@ -7,11 +7,16 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.os.CountDownTimer
 import android.util.AttributeSet
+import android.view.Gravity
 import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
 import android.widget.LinearLayout
 import androidx.annotation.ColorInt
+import androidx.core.view.setMargins
 import com.ksusha.lockpatternapp.R
 import com.ksusha.lockpatternapp.patternmodel.Dot
+import com.ksusha.lockpatternapp.patternmodel.DotView
 
 class PatternLockView @JvmOverloads constructor(
     context: Context,
@@ -29,6 +34,7 @@ class PatternLockView @JvmOverloads constructor(
 
     private var markedDotList = mutableListOf<Dot>()
     private var initialDotList = mutableListOf<Dot>()
+    //private var state: PatternViewState = PatternViewState.Initial
     private var state: PatternViewState = PatternViewState.Initial
     private var attrIsDotAnimate = true
     private var onChangeStateListener: ((state: PatternViewState) -> Unit)? = null
@@ -109,29 +115,72 @@ class PatternLockView @JvmOverloads constructor(
         event?.let { motionEvent ->
             touchedPointX = motionEvent.x
             touchedPointY = motionEvent.y
-            when(motionEvent.action){
+            when (motionEvent.action) {
                 MotionEvent.ACTION_DOWN -> {
                     if (state is PatternViewState.Success) {
                         return false
                     }
                     reset()
-                    if (isTouchedDot(touchedPointX, touchedPointY)){
+                    if (isTouchedDot(touchedPointX, touchedPointY)) {
                         state = PatternViewState.Started
                         onChangeStateListener?.invoke(state)
                         invalidate()
                     }
                 }
+
                 MotionEvent.ACTION_UP -> {
                     if (markedDotList.size != 0 && markedDotList.size >= minCount) {
-                        PatternViewStageState.FIRST
+                        when (stageState) {
+                            PatternViewStageState.FIRST -> {
+                                stagePasswords[PatternViewStageState.FIRST] = getDrawnPatternKey()
+                                state = PatternViewState.Success(
+                                    attrSuccessDotColor, attrSuccessLineColor
+                                )
+                            }
+
+                            PatternViewStageState.SECOND -> {
+                                stagePasswords[PatternViewStageState.SECOND] = getDrawnPatternKey()
+                                state =
+                                    if (stagePasswords[PatternViewStageState.FIRST] != stagePasswords[PatternViewStageState.SECOND]) {
+                                        PatternViewState.Error(
+                                            attrErrorDotColor,
+                                            attrErrorLineColor
+                                        )
+                                    } else {
+                                        PatternViewState.Success(
+                                            attrSuccessDotColor,
+                                            attrSuccessLineColor
+                                        )
+                                    }
+                            }
+                        }
+                        updateViewState(state)
+                        onChangeStateListener?.invoke(state)
+                    } else if (markedDotList.size != 0) {
+                        state = PatternViewState.Error(attrErrorDotColor, attrErrorLineColor)
+                        onChangeStateListener?.invoke(state)
+                    }
+                    invalidate()
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    if (state == PatternViewState.Started && markedDotList.size != maxCount) {
+                        isTouchedDot(touchedPointX, touchedPointY)
+                        invalidate()
                     }
                 }
             }
+            return true
         }
+        return false
+    }
+
+    private fun getDrawnPatternKey(): String {
+        TODO()
     }
 
     private fun isTouchedDot(touchedPointX: Float, touchedPointY: Float): Boolean {
-
+        TODO()
     }
 
     private fun reset() {
@@ -142,7 +191,7 @@ class PatternLockView @JvmOverloads constructor(
 
     }
 
-    private fun updateViewState(state: PatternViewState.Error) {
+    private fun updateViewState(state: PatternViewState) {
 
     }
 
@@ -150,8 +199,66 @@ class PatternLockView @JvmOverloads constructor(
 
     }
 
-    private fun drawPatternView() {
+    private fun drawPatternView(
+        rowSize: Int = 3,
+        columnSize: Int = 3,
+        layoutParams: ViewGroup.LayoutParams = LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            weight = 1f
+            gravity = Gravity.CENTER
+        },
+        nodeKeys: Array<Array<String>> = dotNumberKeyArray
+    ) {
+        for (rowIndex in 0 until rowSize) {
+            createRow(this@PatternLockView, layoutParams).apply {
+                for (columnIndex in 0 until columnSize) {
+                    createRow(
+                        this,
+                        LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            weight = 1f
+                            gravity = Gravity.CENTER
+                        }
+                    ).run{
+                        createColumn(this, nodeKeys[rowIndex][columnIndex])
+                    }
+                }
+            }
+        }
+    }
 
+    private fun createRow(
+        view: LinearLayout, layoutParams: ViewGroup.LayoutParams
+    ): LinearLayout {
+        view.apply {
+            addView(LinearLayout(context).apply {
+                this.layoutParams = layoutParams
+                this.gravity = Gravity.CENTER
+            })
+        }
+        return getChildAt(view.childCount - 1) as LinearLayout
+    }
+
+    private fun createColumn(
+        view: LinearLayout,
+        nodeKey: String
+    ) {
+        val margins = context.resources.getDimensionPixelSize(R.dimen.dot_view_margin)
+        view.apply {
+            addView(DotView(context).apply {
+                (layoutParams as MarginLayoutParams).setMargins(margins)
+                setDotViewColor(attrDotColor)
+                setKey(nodeKey)
+            })
+        }
+    }
+
+    private fun addInitialData() {
+        
     }
 
 }
