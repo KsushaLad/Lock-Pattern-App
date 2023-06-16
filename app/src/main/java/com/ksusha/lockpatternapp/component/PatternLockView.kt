@@ -13,6 +13,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import androidx.annotation.ColorInt
+import androidx.core.view.forEach
+import androidx.core.view.forEachIndexed
 import androidx.core.view.setMargins
 import com.ksusha.lockpatternapp.R
 import com.ksusha.lockpatternapp.patternmodel.Dot
@@ -34,7 +36,6 @@ class PatternLockView @JvmOverloads constructor(
 
     private var markedDotList = mutableListOf<Dot>()
     private var initialDotList = mutableListOf<Dot>()
-    //private var state: PatternViewState = PatternViewState.Initial
     private var state: PatternViewState = PatternViewState.Initial
     private var attrIsDotAnimate = true
     private var onChangeStateListener: ((state: PatternViewState) -> Unit)? = null
@@ -93,7 +94,7 @@ class PatternLockView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas?) {
         super.onDraw(canvas)
-        addInitialCanvas(canvas)
+        addInitialData()
         if (state is PatternViewState.Error){
             updateViewState(state)
         }
@@ -175,28 +176,103 @@ class PatternLockView @JvmOverloads constructor(
         return false
     }
 
-    private fun getDrawnPatternKey(): String {
-        TODO()
+    private fun getDrawnPatternKey() = markedDotList.map { it.key }.joinToString()
+
+    private fun isTouchedDot(pointX: Float, pointY: Float): Boolean {
+        val touchedDot = getTouchedDotByPosition(pointX, pointY) ?: return false
+        if (isDotSelected(touchedDot)) return false
+        markedDotList.takeIf { it.size != 0 }?.last().let { lastTouchedDot ->
+            val rowIndex = (lastTouchedDot!!.rowIndex + touchedDot.rowIndex) / 2
+            val columnIndex = (lastTouchedDot.columnIndex + touchedDot.columnIndex) / 2
+            getDotWithIndex(rowIndex, columnIndex).let { previousDot ->
+                if (isDotSelected(previousDot!!).not()) {
+                    selectDotView(previousDot)
+                }
+            }
+        }
+        if (markedDotList.size != maxCount) {
+            selectDotView(touchedDot)
+        }
+        return true
     }
 
-    private fun isTouchedDot(touchedPointX: Float, touchedPointY: Float): Boolean {
-        TODO()
+    private fun isDotSelected(dot: Dot) = markedDotList.firstOrNull { markedDot ->
+        markedDot.rowIndex == dot.rowIndex && markedDot.columnIndex == dot.columnIndex
+    } != null
+
+    private fun selectDotView(selectedDot: Dot) {
+
+    }
+
+    private fun getDotWithIndex(rowIndex: Float, columnIndex: Float) = initialDotList.firstOrNull {
+        it.rowIndex == rowIndex && it.columnIndex == columnIndex
+    }
+
+    private fun getTouchedDotByPosition(pointX: Float, pointY: Float) = initialDotList.firstOrNull {
+        ((it.leftPoint) <= pointX && (it.topPoint) <= pointY)
+                && ((it.rightPoint) >= pointX && (it.bottomPoint) >= pointY)
     }
 
     private fun reset() {
+        state = PatternViewState.Initial
+        updateViewState(state)
+        markedDotList.clear()
+        countDownTimer?.cancel()
+        countDownTimer = null
+        invalidate()
+    }
 
+    fun getPassword(stageState: PatternViewStageState) = stagePasswords[stageState]
+
+    fun setOnChangeStateListener(listener: (state: PatternViewState) -> Unit) {
+        onChangeStateListener = listener
     }
 
     private fun drawLine(canvas: Canvas?) {
-
+        markedDotList.forEachIndexed { index, _ ->
+            if (index + 1 < markedDotList.size) {
+                canvas?.drawLine(
+                    (markedDotList[index].rightPoint + markedDotList[index].leftPoint) / 2.toFloat(),
+                    ((markedDotList[index].bottomPoint.toFloat()) + (markedDotList[index].topPoint.toFloat())) / 2,
+                    (markedDotList[index + 1].rightPoint + markedDotList[index + 1].leftPoint) / 2.toFloat(),
+                    ((markedDotList[index + 1].bottomPoint.toFloat()) + (markedDotList[index + 1].topPoint.toFloat())) / 2,
+                    paint
+                )
+            }
+        }
+        if (state is PatternViewState.Started) {
+            canvas?.drawLine(
+                (markedDotList.last().rightPoint + markedDotList.last().leftPoint) / 2.toFloat(),
+                ((markedDotList.last().bottomPoint.toFloat()) + (markedDotList.last().topPoint.toFloat())) / 2,
+                touchedPointX, touchedPointY, paint
+            )
+        }
     }
 
     private fun updateViewState(state: PatternViewState) {
-
-    }
-
-    private fun addInitialCanvas(canvas: Canvas?) {
-
+        @ColorInt val dotColor: Int
+        @ColorInt val lineColor: Int
+        when(state) {
+            is PatternViewState.Success -> {
+                dotColor = state.dotColor
+                lineColor = state.lineColor
+            }
+            is PatternViewState.Error -> {
+                dotColor = state.dotColor
+                lineColor = state.lineColor
+            }
+            else -> {
+                dotColor = attrDotColor
+                lineColor = attrLineColor
+            }
+        }
+        paint.color = lineColor
+        markedDotList.forEach { dot ->
+            (((this.getChildAt(dot.rowIndex.toInt()) as? ViewGroup
+                    )?.getChildAt(dot.columnIndex.toInt()) as? ViewGroup
+                    )?.getChildAt(0) as? DotView
+                    )?.setDotViewColor(dotColor)
+        }
     }
 
     private fun drawPatternView(
@@ -258,7 +334,27 @@ class PatternLockView @JvmOverloads constructor(
     }
 
     private fun addInitialData() {
-        
+        if (initialDotList.size != 0) return
+        forEachIndexed { rowIndex, view ->
+            (view as ViewGroup).forEachIndexed { columnIndex, viewGroup ->
+                (viewGroup as ViewGroup).forEach { nodeView ->
+                    if (nodeView !is DotView) return
+                    nodeView.getLocalVisibleRect(rect)
+                    offsetDescendantRectToMyCoords(nodeView, rect)
+                    initialDotList.add(
+                        Dot(
+                            rowIndex = rowIndex.toFloat(),
+                            columnIndex = columnIndex.toFloat(),
+                            leftPoint = rect.left,
+                            rightPoint = rect.right,
+                            topPoint = rect.top,
+                            bottomPoint = rect.bottom,
+                            key = nodeView.key
+                        )
+                    )
+                }
+            }
+        }
     }
 
 }
